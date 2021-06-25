@@ -21,6 +21,7 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/kubeflow/common/pkg/controller.v1/common"
+	"github.com/kubeflow/common/pkg/controller.v1/control"
 	"github.com/kubeflow/common/pkg/controller.v1/expectation"
 	"github.com/kubeflow/common/pkg/util"
 	corev1 "k8s.io/api/core/v1"
@@ -131,15 +132,18 @@ func (r *BaguaReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	r.Scheme = mgr.GetScheme()
 
 	// Create k8s clients to list pods and service objects
-	kubeClientSet := kubernetes.NewForConfigOrDie(mgr.GetConfig())
+	kubeClient := kubernetes.NewForConfigOrDie(mgr.GetConfig())
+	recorder := mgr.GetEventRecorderFor(r.ControllerName())
 
 	r.JobController = common.JobController{
-		Controller:    r,
-		Config:        common.JobControllerConfiguration{EnableGangScheduling: false},
-		Expectations:  expectation.NewControllerExpectations(),
-		WorkQueue:     workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), r.ControllerName()),
-		Recorder:      mgr.GetEventRecorderFor(r.ControllerName()),
-		KubeClientSet: kubeClientSet,
+		Controller:     r,
+		Config:         common.JobControllerConfiguration{EnableGangScheduling: false},
+		Expectations:   expectation.NewControllerExpectations(),
+		WorkQueue:      workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), r.ControllerName()),
+		Recorder:       recorder,
+		KubeClientSet:  kubeClient,
+		PodControl:     control.RealPodControl{KubeClient: kubeClient, Recorder: recorder},
+		ServiceControl: control.RealServiceControl{KubeClient: kubeClient, Recorder: recorder},
 	}
 
 	return ctrl.NewControllerManagedBy(mgr).
