@@ -2,11 +2,13 @@ package controllers
 
 import (
 	"fmt"
+
 	v1 "github.com/kubeflow/common/pkg/apis/common/v1"
 	"github.com/kubeflow/common/pkg/controller.v1/common"
 	"github.com/kubeflow/common/pkg/controller.v1/expectation"
 	"github.com/kubeflow/common/pkg/util"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 
@@ -61,16 +63,18 @@ func (r *BaguaReconciler) DeleteExpectations(job *api.Bagua) {
 
 func (r *BaguaReconciler) AddObject(e event.CreateEvent) bool {
 	obj := e.Object
-	job := obj.(*api.Bagua)
-	key, err := common.KeyFunc(job)
-	if err != nil {
-		return true
+	if value := obj.GetLabels()[v1.GroupNameLabel]; value != r.GetAPIGroupVersion().Group {
+		return false
 	}
 	rtype := obj.GetLabels()[v1.ReplicaTypeLabel]
 	if len(rtype) == 0 {
-		return true
+		return false
 	}
-
+	owner := metav1.GetControllerOf(obj)
+	if owner == nil {
+		return false
+	}
+	key := obj.GetNamespace()+"/"+owner.Name
 	var expectKey string
 	if _, ok := obj.(*corev1.Pod); ok {
 		expectKey = expectation.GenExpectationPodsKey(key, rtype)
@@ -78,23 +82,25 @@ func (r *BaguaReconciler) AddObject(e event.CreateEvent) bool {
 	if _, ok := obj.(*corev1.Service); ok {
 		expectKey = expectation.GenExpectationServicesKey(key, rtype)
 	}
-	util.LoggerForJob(job).Infof("creation observed: name=%s, key=%s", obj.GetName(), expectKey)
+	util.LoggerForKey(key).Infof("creation observed: name=%s, key=%s", obj.GetName(), expectKey)
 	r.JobController.Expectations.CreationObserved(expectKey)
 	return true
 }
 
 func (r *BaguaReconciler) DeleteObject(e event.DeleteEvent) bool {
 	obj := e.Object
-	job := obj.(*api.Bagua)
-	key, err := common.KeyFunc(job)
-	if err != nil {
-		return true
+	if value := obj.GetLabels()[v1.GroupNameLabel]; value != r.GetAPIGroupVersion().Group {
+		return false
 	}
 	rtype := obj.GetLabels()[v1.ReplicaTypeLabel]
 	if len(rtype) == 0 {
-		return true
+		return false
 	}
-
+	owner := metav1.GetControllerOf(obj)
+	if owner == nil {
+		return false
+	}
+	key := obj.GetNamespace()+"/"+owner.Name
 	var expectKey string
 	if _, ok := obj.(*corev1.Pod); ok {
 		expectKey = expectation.GenExpectationPodsKey(key, rtype)
@@ -102,7 +108,7 @@ func (r *BaguaReconciler) DeleteObject(e event.DeleteEvent) bool {
 	if _, ok := obj.(*corev1.Service); ok {
 		expectKey = expectation.GenExpectationServicesKey(key, rtype)
 	}
-	util.LoggerForJob(job).Infof("deletion observed: name=%s, key=%s", obj.GetName(), expectKey)
+	util.LoggerForKey(key).Infof("deletion observed: name=%s, key=%s", obj.GetName(), expectKey)
 	r.JobController.Expectations.DeletionObserved(expectKey)
 	return true
 }
